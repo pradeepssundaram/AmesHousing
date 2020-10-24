@@ -4,28 +4,37 @@ author: "Pradeep"
 date: "25/09/2020"
 output: 
   html_document:
-  df_print: kable
+    code_folding: hide
 
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
 library(tidyverse)
 library(hash)
 library(cowplot)
 library(RColorBrewer)
+library(knitr)
+library(kableExtra)
+
 ```
 
 ## Ames Data Set - Exploratory Data Analysis
 First we will read the dataset , get the number of rows and columns and the data type of each of those columns. 
-```{r}
+```{r message=FALSE,warning=FALSE}
 amesHousing <- read_csv("./Data/train.csv")
-amesHousing %>% slice_sample(n = 100)
+amesHousing %>% 
+  slice_sample(n = 20) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
+  scroll_box(width = "1000px", height = "500px")
+
+
 ```
 This dataset contains `r NROW(amesHousing)` rows and `r NCOL(amesHousing)` columns. Next we will identify missing data if any on a per column basis.
 
 ### Getting Missing Data Information and their treatment
-The below snippet will neatly summarise the missing values by columns and its percentage.
+The below snippet will neatly summarize the missing values by columns and its percentage.
 ```{r}
 numrows <- nrow(amesHousing)
 amesHousing %>% 
@@ -33,7 +42,9 @@ amesHousing %>%
   pivot_longer(cols = everything()) %>% 
   mutate("% of Values Missing"= round((value/numrows)*100,digits = 2)) %>% 
   select("Column Name" =name,"Number of Missing Values"=value,"% of Values Missing") %>% 
-  arrange(desc(`% of Values Missing`))
+  arrange(desc(`% of Values Missing`)) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE)
 
 ```
 We will deal with the missing values a bit later , depending on what columns it is. Sometimes missing values might indicate a new catagory or an absence of a feature. That will need more data analysis.
@@ -53,8 +64,74 @@ Let us display the data types or class
 ```{r}
 amesHousing %>% 
   summarise(across(.cols = everything(),.fns=class)) %>% 
-  pivot_longer(cols = everything())
-  
+  pivot_longer(cols = everything()) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
+  scroll_box(height = 500)
+
+```
+Time for some transformations. The year* variables are treated as integers or factors. A better idea wold be to actually  get the age of the house and time since remodelling.
+```{r}
+# amesHousing %>% 
+#   select(contains("Yr") | contains("Year") | contains("Mo") | contains("Mn"))
+
+thisyear<-2011 # based on data
+amesT<-amesHousing %>% 
+  mutate(AgeofHouse=thisyear-YearBuilt
+         ,TimeSinceSale= 
+           case_when(
+             MoSold<=6 ~ thisyear-YrSold
+             ,MoSold>6 ~ thisyear-YrSold-1
+             )
+         ,TimeSinceRemodel=thisyear-YearRemodAdd,
+         TimeSinceGarageBuilt=case_when( GarageYrBlt == -1 ~ NA_real_,TRUE~thisyear-GarageYrBlt)
+         ) %>% 
+  select(
+    YearBuilt,YrSold,MoSold,YearRemodAdd,AgeofHouse,GarageYrBlt,
+    TimeSinceSale,TimeSinceRemodel,TimeSinceGarageBuilt,SalePrice
+    )
+amesT %>% arrange(desc(TimeSinceGarageBuilt))
+
+plot1<-ggplot(data = amesT) +
+  geom_point(mapping = aes(x=AgeofHouse,y=SalePrice/1000)) +
+  theme_classic()
+
+plot2<-ggplot(data = amesT) +
+    geom_point(mapping = aes(x=TimeSinceSale,y=SalePrice/1000)) +
+    theme_classic()
+
+plot3<-ggplot(data = amesT) +
+  geom_point(mapping = aes(x=TimeSinceRemodel,y=SalePrice/1000)) +
+  theme_classic()
+
+plot4<-ggplot(data = amesT ) +
+  geom_point(mapping = aes(x=TimeSinceGarageBuilt,y=SalePrice/1000)) +
+  theme_classic()
+
+plot_grid(plotlist = list(plot1,plot2,plot3,plot4),ncol = 1)
+
+rm(list=c("amesT","plot1","plot2","plot3","plot4"))
+
+
+```
+We are going to add these variables to the ames housing dataset and removing the Yr and Mo variables.
+
+```{r}
+cols_tobe_dropped <- amesHousing %>% 
+select(contains("Yr") | contains("Year") | contains("Mo") | contains("Mn")) %>% 
+  names()
+
+amesHousing<-amesHousing %>% 
+  mutate(AgeofHouse=thisyear-YearBuilt
+         ,TimeSinceSale= 
+           case_when(
+             MoSold<=6 ~ thisyear-YrSold
+             ,MoSold>6 ~ thisyear-YrSold-1
+             )
+         ,TimeSinceRemodel=thisyear-YearRemodAdd,
+         TimeSinceGarageBuilt=case_when( GarageYrBlt == -1 ~ NA_real_,TRUE~thisyear-GarageYrBlt)
+         ) %>% 
+  select(-all_of(cols_tobe_dropped))
 ```
 
 ### Converting to factors
@@ -168,8 +245,10 @@ Lets take a quick glimpse at the dataset after all the modification.
 ```{r}
 amesHousing %>% 
   summarise(across(.cols = everything(),.fns=class)) %>% 
-  pivot_longer(cols = everything())
-
+  pivot_longer(cols = everything()) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
+  scroll_box(height = 500)
 
 ```
 ### Visualizations
@@ -216,14 +295,12 @@ plt<-ggplot(data = amesHousing) +
   scale_y_continuous(expand = c(0, 0), limits = c(0, NA))
   plt
   saveimages(imgname = "Log-SalePriceDistribution",plt = plt)
-  rm(plt)
+  
 ```
-We will not visualize ID as it is not a predictor. We will start with visualizing numerical columns to undertsand the distribution.
+We will not visualize ID as it is not a predictor. We will start with visualizing numerical columns to understand the distribution.
+
 ```{r}
 amesHousing %>% select(where(is.numeric)) %>% select(-SalePrice)
-```
-```{r}
-amesHousing %>% slice_sample(n=100)
 ```
 
 ```{r}
@@ -583,69 +660,6 @@ plots<-pmap(.l = list(xvar=factor_cols,title=factor_cols,axislabel=factor_cols),
 #plot_grid(plotlist = plots,ncol = 2)
 plots
 
-```
-Time for some transformations. The year* variables are treated as intergers or factors. A better idea wold be to actually  get the age of the house and time since remodelling.
-```{r}
-# amesHousing %>% 
-#   select(contains("Yr") | contains("Year") | contains("Mo") | contains("Mn"))
-
-thisyear<-2011 # based on data
-amesT<-amesHousing %>% 
-  mutate(AgeofHouse=thisyear-YearBuilt
-         ,TimeSinceSale= 
-           case_when(
-             MoSold<=6 ~ thisyear-YrSold
-             ,MoSold>6 ~ thisyear-YrSold-1
-             )
-         ,TimeSinceRemodel=thisyear-YearRemodAdd,
-         TimeSinceGarageBuilt=case_when( GarageYrBlt == -1 ~ NA_real_,TRUE~thisyear-GarageYrBlt)
-         ) %>% 
-  select(
-    YearBuilt,YrSold,MoSold,YearRemodAdd,AgeofHouse,GarageYrBlt,
-    TimeSinceSale,TimeSinceRemodel,TimeSinceGarageBuilt,SalePrice
-    )
-amesT %>% arrange(desc(TimeSinceGarageBuilt))
-
-plot1<-ggplot(data = amesT) +
-  geom_point(mapping = aes(x=AgeofHouse,y=SalePrice/1000)) +
-  theme_classic()
-
-plot2<-ggplot(data = amesT) +
-    geom_point(mapping = aes(x=TimeSinceSale,y=SalePrice/1000)) +
-    theme_classic()
-
-plot3<-ggplot(data = amesT) +
-  geom_point(mapping = aes(x=TimeSinceRemodel,y=SalePrice/1000)) +
-  theme_classic()
-
-plot4<-ggplot(data = amesT ) +
-  geom_point(mapping = aes(x=TimeSinceGarageBuilt,y=SalePrice/1000)) +
-  theme_classic()
-
-plot_grid(plotlist = list(plot1,plot2,plot3,plot4),ncol = 1)
-
-rm(list=c("amesT","plot1","plot2","plot3","plot4"))
-
-
-```
-We are going to add these variables to the ames housing dataset and removing the Yr and Mo variables.
-
-```{r}
-cols_tobe_dropped <- amesHousing %>% 
-select(contains("Yr") | contains("Year") | contains("Mo") | contains("Mn")) %>% 
-  names()
-
-amesHousing<-amesHousing %>% 
-  mutate(AgeofHouse=thisyear-YearBuilt
-         ,TimeSinceSale= 
-           case_when(
-             MoSold<=6 ~ thisyear-YrSold
-             ,MoSold>6 ~ thisyear-YrSold-1
-             )
-         ,TimeSinceRemodel=thisyear-YearRemodAdd,
-         TimeSinceGarageBuilt=case_when( GarageYrBlt == -1 ~ NA_real_,TRUE~thisyear-GarageYrBlt)
-         ) %>% 
-  select(-all_of(cols_tobe_dropped))
 ```
 
 
