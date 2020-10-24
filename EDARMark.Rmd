@@ -5,7 +5,8 @@ date: "25/09/2020"
 output: 
   html_document:
     code_folding: hide
-
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -21,7 +22,7 @@ library(kableExtra)
 
 ## Ames Data Set - Exploratory Data Analysis
 First we will read the dataset , get the number of rows and columns and the data type of each of those columns. 
-```{r message=FALSE,warning=FALSE}
+```{r message=FALSE,warning=FALSE,cache=TRUE}
 amesHousing <- read_csv("./Data/train.csv")
 amesHousing %>% 
   slice_sample(n = 20) %>% 
@@ -67,7 +68,7 @@ amesHousing %>%
   pivot_longer(cols = everything()) %>% 
   kbl() %>% 
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
-  scroll_box(height = 500)
+  scroll_box(height = "500px")
 
 ```
 Time for some transformations. The year* variables are treated as integers or factors. A better idea wold be to actually  get the age of the house and time since remodelling.
@@ -90,7 +91,10 @@ amesT<-amesHousing %>%
     YearBuilt,YrSold,MoSold,YearRemodAdd,AgeofHouse,GarageYrBlt,
     TimeSinceSale,TimeSinceRemodel,TimeSinceGarageBuilt,SalePrice
     )
-amesT %>% arrange(desc(TimeSinceGarageBuilt))
+amesT %>% arrange(desc(TimeSinceGarageBuilt)) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
+  scroll_box(height = "500px")
 
 plot1<-ggplot(data = amesT) +
   geom_point(mapping = aes(x=AgeofHouse,y=SalePrice/1000)) +
@@ -120,7 +124,7 @@ We are going to add these variables to the ames housing dataset and removing the
 cols_tobe_dropped <- amesHousing %>% 
 select(contains("Yr") | contains("Year") | contains("Mo") | contains("Mn")) %>% 
   names()
-
+thisyear<- 2011
 amesHousing<-amesHousing %>% 
   mutate(AgeofHouse=thisyear-YearBuilt
          ,TimeSinceSale= 
@@ -208,6 +212,12 @@ I am going to experiment with some dplyr functions like cur_column etc to reduce
 ```{r}
 factor_cols<- c("MSSubClass",	"MSZoning",	"Street",	"Alley",	"LotShape",	"LandContour",	"Utilities",	"LotConfig",	"LandSlope",	"Neighborhood",	"Condition1",	"Condition2",	"BldgType",	"HouseStyle",	"OverallQual",	"OverallCond",	"RoofStyle",	"RoofMatl",	"Exterior1st",	"Exterior2nd",	"MasVnrType",	"ExterQual",	"ExterCond",	"Foundation",	"BsmtQual",	"BsmtCond",	"BsmtExposure",	"BsmtFinType1",	"BsmtFinType2",	"Heating",	"HeatingQC",	"CentralAir",	"Electrical",	"KitchenQual",	"Functional",	"FireplaceQu",	"GarageType",	"GarageFinish",	"GarageQual",	"GarageCond",	"PavedDrive",	"PoolQC",	"Fence",	"MiscFeature",	"SaleType",	"SaleCondition"
 )
+numericcols<-colnames(amesHousing)[ !colnames(amesHousing)  
+                       %in% 
+                      union(factor_cols,c("Id","BsmtFullBath"
+                                          ,"BsmtHalfBath","FullBath","HalfBath","BedroomAbvGr","KitchenAbvGr"
+                                          ,"TotRmsAbvGrd","Fireplaces","GarageCars","TotRmsAbvGrd","SalePrice") )
+                      ]
 
 ordered_factor_cols<-c("LandSlope","OverallQual","OverallCond","ExterQual","ExterCond","BsmtQual","BsmtCond","BsmtExposure","BsmtFinType1","BsmtFinType2","HeatingQC","KitchenQual","Functional","FireplaceQu","GarageFinish","GarageQual","GarageCond","Utilities")
 unordered_factor_cols <- setdiff(factor_cols,ordered_factor_cols)
@@ -248,23 +258,25 @@ amesHousing %>%
   pivot_longer(cols = everything()) %>% 
   kbl() %>% 
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
-  scroll_box(height = 500)
+  scroll_box(height = "500px")
 
 ```
 ### Visualizations
 Let us start by visualizing the distribution of house prices. We will then visualize how each of the variables are distributed. We will then try and determine if for each type of variable there is a difference in the price.
 First through we will create a small function to save pictures.
 
+Function to Save Images
 ```{r}
 saveimages <- function(figpath="./figs/",imgname,plt=last_plot())
 {
   
   fullname <-paste0(imgname,".png")
-  ggsave(filename = fullname,plot = plt,device = png(),path=figpath)
+  ggsave(filename = fullname,plot = plt,path=figpath)
+  while (!is.null(dev.list()))  dev.off()
   
 }
 ```
-
+We will start by plotting the distribution of the Target Variable : Sale Price.
 ```{r}
 plt<-ggplot(data = amesHousing) +
   geom_density(mapping = aes(x = SalePrice),fill="#e34a33") +
@@ -280,7 +292,8 @@ plt
 saveimages(imgname = "SalePriceDistribution",plt = plt)
 rm(plt)
 ```
-
+We see that the above is skewed and not symmetric.
+Let us log transform the variable and check.
 
 ```{r}
 plt<-ggplot(data = amesHousing) +
@@ -297,58 +310,43 @@ plt<-ggplot(data = amesHousing) +
   saveimages(imgname = "Log-SalePriceDistribution",plt = plt)
   
 ```
-We will not visualize ID as it is not a predictor. We will start with visualizing numerical columns to understand the distribution.
-
+We will not visualize ID as it is not a predictor. We will start with visualizing numerical columns to understand the distribution of data
+However since there are a number numerical variables we need to write a function to view this automatically.
 ```{r}
-amesHousing %>% select(where(is.numeric)) %>% select(-SalePrice)
-```
-
-```{r}
-setstandards <- function(plt)
-{
-  plt<-plt + theme_classic() + theme(plot.title = element_text(hjust = 0.5) ) +
-  scale_y_continuous(labels=function (x){format(x,scientific=FALSE)}) +
-  scale_x_continuous(labels=function (x){format(x/1000,scientific=FALSE)}) +
-  theme(panel.background = element_rect(fill = "white",
-    
-    size = 0.5, linetype = "solid")) +
-  theme(plot.background = element_rect(fill="white"))
-  return(plt)
+drawdistplot<- function(xvar,plttitle){
+  xvari<-ensym(xvar)
+  ptitle<- paste0("Distribution of ",plttitle)
+  p<-ggplot(data = amesHousing)+
+  geom_histogram(mapping = aes(x = !!xvari,y=..density..),alpha=.25,binwidth = 5, fill="#ffa600") +
+  geom_density(mapping = aes(x=!!xvari), color="#003f5c")+
+  ylab("Density")+
+  ggtitle(ptitle) +
+  theme_classic()
+  
+  return(p)
 }
 ```
 
-For some we will plot the distribution and for some we will plot the counts.
-```{r}
-# Lot Frontage
+```{r cache=TRUE }
+ctitles<- c("Lot Frontage","Lot Area","Masonry Veneer Area","Finished Basement Area","Finished Basement 2 Area"
+            ,"UnFinished Basement Area","Total Basement Area","First Floor Area","Second Floor Area"
+            ,"Low Quality Finished Floor Area","Above Ground Living Area"
+            ,"Garage Area","Wooden Deck Area","Open Porch Area","Enclosed Proch Area"
+            ,"3 Season Porch Area","Screen Porch Area","Pool Area","Value of Misscelaneous Facilities"
+            ,"Age of the House" ,"Time Since Sale","Time Since Remodelling","Age of the Garage"
+            )
+imgnames<-lapply(ctitles,function(x){paste0("Distribution",x)})
+plots<-pmap(.l = list(xvar=numericcols,plttitle=ctitles),.f = drawdistplot)
+plots
+dummyvar<-pmap(.l=list(imgname=imgnames,plt=plots),.f = saveimages)
 
-plt<-ggplot(data=amesHousing ) +
-  geom_histogram(mapping = aes(x = LotFrontage),alpha=.25,binwidth = 5, fill="#ffa600") +
-  geom_density(mapping = aes(x=LotFrontage,y=5*..count..), color="#003f5c")+
-  xlab("Lot Frontage in Feet") +
-  ylab("Count of Houses")+
-  ggtitle("Distribution of Lot Frontage")
-plt<-setstandards(plt = plt)
-plt
-saveimages(imgname = "Dist-LotFrontage",plt=plt)
-rm(plt)  
+```
+```{r fig.width=14, fig.height=20}
+plot_grid(plotlist = plots,ncol = 2)
+saveimages(imgname = "ConsolidatedDistPlot",plt = last_plot())
 ```
 
 
-
-```{r}
-plt<-ggplot(data=amesHousing ) +
-  geom_histogram(mapping = aes(x = LotArea),alpha=.25,binwidth = 200, fill="#ffa600") +
-  geom_density(mapping = aes(x=LotArea,y=200*..count..), color="#73a2c6")+
-  xlab("Lot Frontage in Sq.Feet") +
-  ylab("Count of Houses")+
-  ggtitle("Distribution of Lot Area") 
-plt<-setstandards(plt)
-plt
-saveimages(imgname = "Dist-LotArea",plt=plt)
-rm(plt)
-  
-```
-For year built we should just get the count of houses so a bar chart for that would help to determine how many houses were built in each year.
 ```{r}
 
 plt<-ggplot(data = amesHousing %>% mutate(Street=case_when(Street=="Grvl"~"Gravel",Street=="Pave" ~"Paved"))) +
@@ -517,8 +515,8 @@ ggplot(data = amesHousing)+
   scale_y_continuous(labels=function (x){format(x/1000,scientific=FALSE)}) +
   scale_x_continuous(labels=function (x){format(x/1000,scientific=FALSE)},limits = c(NA,75*1000)) 
   
-
 ```
+
 Since most of the houses were below 75K sqft I limited the graph to that.But in general as the area increases the price goes up.
 Let us now do the same for all numerical variables.We will exclude the Years Built and Year Remodelled for now as we will transform this in to Age and Time Since Remodelled Variables.We will draw a series of scatter plots. 
 
@@ -540,17 +538,11 @@ drawscatterplot<-function(xvar,title,axislabel){
 
 
 ```{r fig.width=14, fig.height=12}
-numericcols<-colnames(amesHousing)[ !colnames(amesHousing)  
-                       %in% 
-                      union(factor_cols,c("Id","YearBuilt","YearRemodAdd","GarageYrBlt","MoSold","YrSold","BsmtFullBath"
-                                          ,"BsmtHalfBath","FullBath","HalfBath","BedroomAbvGr","KitchenAbvGr"
-                                          ,"TotRmsAbvGrd","Fireplaces","GarageCars","TotRmsAbvGrd","SalePrice") )
-                      ]
-numericcols
-
 ctitles <- c("Lot Frontage","Lot Area","Masonry Veneer Area","Basement Finished Area(Type 1)","Basement Finished Area(Type 2)"
              ,"UnFinished Basement Area(Type 1)" ,"Total Basement Area(All)","Area of 1st Floor","Area of 2nd Floor","Low quality finished square feet (all floors)","Above Ground Living Area","Area of Garage","Area of Wooden Deck","Area of Open Porch","Area of Enclosed Porch"
-             ,"3 Season Porch Area","Screened Porch Area","Area of the Pool","Value of Miscellaneous Items"
+             ,"3 Season Porch Area","Screened Porch Area","Area of the Pool","Value of Miscellaneous Items","Age Of The House","Time Since Last Sale",
+"Time Since Last Remodel",
+"Time Since Garage Built"
              )
 #pmap(.l = list(xvar=numericcols,title=ctitles,axislabel=ctitles),.f = drawscatterplot)
 plots<-pmap(.l = list(xvar=numericcols,title=ctitles,axislabel=ctitles),.f = drawscatterplot)
@@ -577,10 +569,9 @@ ggplot(data = amesHousing) +
         ,axis.text.y = element_blank()
         ,axis.text.x = element_blank())
 ```
+
 While the individual Types are not that important , we can clearly see that there is a significant variation between the median prices across house types.
 Let us get the medians and average of each group.
-
-
 
 ```{r}
 medianHP<-amesHousing %>% summarise(Median=median(SalePrice)) %>% pull()
@@ -589,7 +580,10 @@ amesHousing %>%
   group_by(MSSubClass) %>%
   summarise(Average=mean(SalePrice),Median=median(SalePrice)) %>%
   mutate(`Type Of House`=getValsFromDict(hshMSSubClass,MSSubClass),`Median House Price`=medianHP) %>% 
-  select(`Type Of House`,Median,`Median House Price`)
+  select(`Type Of House`,Median,`Median House Price`) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
+  scroll_box(height = "500px")
 
 ```
 
@@ -597,6 +591,7 @@ amesHousing %>%
 ```{r}
 ggplot(data = amesHousing)+
   geom_boxplot(mapping = aes(x=Street,y=SalePrice,fill=Street)) +
+  geom_hline(mapping = aes(yintercept=median(SalePrice)),color="blue",linetype=2)+
   theme_classic()+
   scale_y_continuous(labels=function(x){format(x/1000,scientific=FALSE)}) +
   ggtitle("Plot of Street Types to Sale Price")+
@@ -629,37 +624,60 @@ drawboxplot<-function(xvar,title,axislabel){
   title<-paste0("Plot of Sale Price (1000s $) ",title)
   p<-ggplot(data = amesHousing) +
     geom_boxplot(mapping = aes(x=!!xvar,y=SalePrice,fill=!!xvar))+
+    geom_hline(mapping = aes(yintercept=median(SalePrice)),color="blue",linetype=2)+
     scale_y_continuous(labels = function(x){sprintf("$%sK",format(x/1000,scientific=FALSE))}) +
     ylab("Sale Price")+
-#    xlab(axislabel)+
+    xlab(axislabel)+
     ggtitle(title)+
     theme_classic() +
     theme(text=element_text(family="Overpass")) +
     scale_fill_brewer(palette = "Dark2")+
     theme(legend.position = "none")
-  p
+  return(p)
 }
 ```
 
 ```{r }
 
-# ctitles <- c("Lot Frontage","Lot Area","Masonry Veneer Area","Basement Finished Area(Type 1)","Basement Finished Area(Type 2)"
-#              ,"UnFinished Basement Area(Type 1)" ,"Total Basement Area(All)","Area of 1st Floor","Area of 2nd Floor","Low quality finished square feet (all floors)","Above Ground Living Area","Area of Garage","Area of Wooden Deck","Area of Open Porch","Area of Enclosed Porch"
-#              ,"3 Season Porch Area","Screened Porch Area","Area of the Pool","Value of Miscellaneous Items"
-#              )
-#pmap(.l = list(xvar=numericcols,title=ctitles,axislabel=ctitles),.f = drawscatterplot)
-# 
-# ctitles <-c("MSSubClass",    "MSZoning",      "Street"  ,      "Alley",         "LotShape",      "LandContour",   "Utilities",     "LotConfig"    ,
-# "LandSlope",     "Neighborhood",  "Condition1",    "Condition2",    "BldgType",      "HouseStyle",    "OverallQual",   "OverallCond",  
-# "RoofStyle" ,    "RoofMatl"     , "Exterior1st",   "Exterior2nd",   "MasVnrType",    "ExterQual"  ,   "ExterCond" ,    "Foundation"  , 
-# "BsmtQual"   ,   "BsmtCond"      ,"BsmtExposure",  "BsmtFinType1",  "BsmtFinType2",  "Heating"     ,  "HeatingQC"  ,   "CentralAir"   ,
-# "Electrical"  ,  "KitchenQual"  , "Functional" ,   "FireplaceQu"  , "GarageType",    "GarageFinish" , "GarageQual"  ,  "GarageCond"   ,
-# "PavedDrive"   , "PoolQC" ,       "Fence"    ,     "MiscFeature" ,  "SaleType"   ,   "SaleCondition"
-# )
-plots<-pmap(.l = list(xvar=factor_cols,title=factor_cols,axislabel=factor_cols),.f = drawboxplot)
-#plot_grid(plotlist = plots,ncol = 2)
+ctitles <-c("Type of House",    "Zoning",      "Type of Street"  ,      "Type of Alley",         "Lot Shape",      "Land Contour",   "Utilities",     "Lot Configuration"    ,
+"Land Slope",     "Neighborhood",  "Condition1",    "Condition2",    "Building Type",      "House Style",    "Overall Quality",   "Overall Condition",
+"Roof Style" ,    "Roof Material"     , "Exterior 1st",   "Exterior 2nd",   "Masonry Veneer Type",    "Exterior Quality"  ,   "Exteior Condiin" ,    "Foundation"  , "Basement Quality"   ,   "Basement Cond"      ,"Basement Exposure",  "Basement Finish Type 1",  "Basement Finish Type2",  "Heating"     ,  "Heating Quality and Condition "  ,   "Central AC Type"   ,
+"Electrical"  ,  "Kitchen Quality"  , "Functional" ,   "Fireplace Quality"  , "Garage Type",    "Garage Finish" , "Garage Quality"  ,  "Garage Condition","Paved Drive"   , "Pool Quality and Condition" ,"Fence","Miscelnnaeous Features" ,  "Sale Type"   ,   "Sale Condition"
+)
+imgnames <- lapply(ctitles, function(x){paste0("Count1 of ",x)})
+plots<-pmap(.l = list(xvar=factor_cols,title=ctitles,axislabel=ctitles),.f = drawboxplot)
 plots
+dummyvar<-pmap(.l = list(imgname=imgnames,plt=plots),.f=saveimages)
 
+```
+
+let us also get the corelations of the numeric variables wrt SalePrice
+```{r}
+getCor<- function(col,corrtype)
+{
+  return(cor(x=col,y=amesHousing$SalePrice,method =corrtype ))
+}
+amesHousing %>% 
+  select(all_of(union(numericcols,c('SalePrice')))) %>% 
+  transmute(
+    across(
+      .cols = all_of(numericcols)
+      ,.fns = list(
+        ~ getCor(.x, "spearman"),~ getCor(.x, "pearson")
+      )
+    )
+  ) %>% 
+  relocate(ends_with("_1")) %>% 
+  pivot_longer(everything(),
+               names_to = c("Feature", ".value"),
+               names_pattern = "(.+)_(.+)"
+  ) %>% 
+  select(Feature,Pearson=`2`,Spearman=`1`) %>%
+  distinct() %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE) %>% 
+  scroll_box(height = "500px")
+  
 ```
 
 
